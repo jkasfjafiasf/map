@@ -162,7 +162,7 @@
             <span id="loadStatus" style="color:var(--text-secondary);font-size:0.85rem;"></span>
         </div>
         <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none">
-        <input type="file" id="fileInput" multiple accept=".inf,.dat,.map" style="display:none">
+        <input type="file" id="fileInput" multiple accept=".inf,.dat,.map,.servermap" style="display:none">
 
         <div class="stats">
             <div class="stat-card"><div class="num" id="cntInf">0</div><div class="label">.inf</div></div>
@@ -279,7 +279,8 @@ async function loadFiles(files) {
     const valid = [];
     let skipped = 0;
     for (const f of files) {
-        const m = f.name.toLowerCase().match(/^(\d+)\.(inf|dat|map)$/);
+        const m = f.name.match(/^[Mm]apa(\d+)\.(inf|dat|map|servermap)$/i) || f.name.match(/^(\d+)\.(inf|dat|map|servermap)$/i);
+        if (m && m[2].toLowerCase() === 'servermap') m[2] = 'map';
         if (m) valid.push({ file: f, num: m[1], ext: m[2] });
         else skipped++;
     }
@@ -312,7 +313,7 @@ async function loadFiles(files) {
     document.getElementById('cntMap').textContent = nm;
     document.getElementById('cntTotal').textContent = t;
     document.getElementById('btnInspect').disabled = t === 0;
-    statusEl.textContent = t > 0 ? `${t} archivos cargados (${ni} .inf, ${nd} .dat, ${nm} .map). Click Inspeccionar.` : 'No se encontraron archivos validos (deben llamarse 1.inf, 2.dat, etc.)';
+    statusEl.textContent = t > 0 ? `${t} archivos cargados (${ni} .inf, ${nd} .dat, ${nm} .map). Click Inspeccionar.` : 'No se encontraron archivos validos (Mapa1.inf, Mapa1.dat, 1.map, etc.)';
     progC.style.display = 'none';
 }
 
