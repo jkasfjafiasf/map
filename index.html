@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>AO Map Extractor</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#1a1a2e;color:#e0e0e0;padding:20px}
+h1{text-align:center;color:#00d4ff;margin-bottom:5px}
+.sub{text-align:center;color:#666;font-size:12px;margin-bottom:20px}
+.drop{border:2px dashed #444;border-radius:12px;padding:40px;text-align:center;background:#16213e;cursor:pointer;margin-bottom:15px}
+.drop:hover,.drop.over{border-color:#00d4ff;background:#1a2744}
+.drop h2{color:#00d4ff;font-size:18px}
+.drop p{color:#888;font-size:13px;margin-top:8px}
+.drop input{display:none}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:15px}
+.stat{background:#16213e;border:1px solid #333;border-radius:8px;padding:12px 20px;text-align:center;flex:1;min-width:120px}
+.stat .n{font-size:28px;font-weight:bold;color:#00d4ff}
+.stat .l{font-size:11px;color:#888}
+#output{width:100%;height:400px;background:#111;color:#0f0;border:1px solid #333;border-radius:8px;padding:10px;font-family:Consolas,monospace;font-size:11px;resize:vertical;display:none}
+.btns{display:flex;gap:8px;margin:15px 0;flex-wrap:wrap}
+.btn{padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-size:14px;font-weight:bold}
+.btn-copy{background:#00d4ff;color:#1a1a2e}
+.btn-copy:hover{background:#33ddff}
+.btn-clear{background:#333;color:#ccc}
+.btn-clear:hover{background:#444}
+#msg{position:fixed;bottom:20px;right:20px;padding:10px 18px;background:#0f3460;border:1px solid #00d4ff;border-radius:8px;font-size:13px;display:none;z-index:99}
+</style>
+</head>
+<body>
+
+<h1>AO Map Extractor</h1>
+<p class="sub">Arrastra archivos - Todo se procesa en tu navegador, nada se sube</p>
+
+<div class="drop" id="drop">
+<h2>Arrastra archivos aca</h2>
+<p>Cualquier archivo de mapa (.MAP .INF .DAT o sin extension)</p>
+<input type="file" id="fi" multiple>
+</div>
+
+<div class="stats" id="stats" style="display:none">
+<div class="stat"><div class="n" id="sFiles">0</div><div class="l">Archivos</div></div>
+<div class="stat"><div class="n" id="sNpcs">0</div><div class="l">NPCs</div></div>
+<div class="stat"><div class="n" id="sObjs">0</div><div class="l">Objetos</div></div>
+<div class="stat"><div class="n" id="sExits">0</div><div class="l">Exits</div></div>
+<div class="stat"><div class="n" id="sTrig">0</div><div class="l">Triggers</div></div>
+</div>
+
+<div class="btns" id="btns" style="display:none">
+<button class="btn btn-copy" onclick="downloadJSON()">DESCARGAR JSON</button>
+<button class="btn btn-copy" style="background:#0a6" onclick="copyAll()">COPIAR AL PORTAPAPELES</button>
+<button class="btn btn-clear" onclick="clearAll()">Limpiar</button>
+</div>
+
+<textarea id="output" readonly></textarea>
+
+<div id="msg"></div>
+
+<script>
+var drop=document.getElementById('drop'),fi=document.getElementById('fi'),out=document.getElementById('output');
+var allFiles=new Map();
+
+drop.onclick=function(){fi.click()};
+drop.ondragover=function(e){e.preventDefault();drop.classList.add('over')};
+drop.ondragleave=function(){drop.classList.remove('over')};
+drop.ondrop=function(e){e.preventDefault();drop.classList.remove('over');handle(e.dataTransfer.files)};
+fi.onchange=function(e){handle(e.target.files)};
+
+function handle(list){
+  for(var i=0;i<list.length;i++){
+    (function(f){
+      var r=new FileReader();
+      r.onload=function(){
+        var ext=f.name.lastIndexOf('.')>0?f.name.substring(f.name.lastIndexOf('.')+1).toLowerCase():'inf';
+        allFiles.set(f.name,{type:ext,data:new Uint8Array(r.result),size:f.size,name:f.name});
+        process();
+      };
+      r.readAsArrayBuffer(f);
+    })(list[i]);
+  }
+}
+
+function r16(d,o){var v=d[o]|(d[o+1]<<8);return v>0x7FFF?v-0x10000:v}
+function u16(d,o){return d[o]|(d[o+1]<<8)}
+
+function parseMap(data){
+  var R={triggers:[],blocked:0};
+  var o=2+263+8;
+  for(var y=1;y<=100;y++){
+    for(var x=1;x<=100;x++){
+      if(o>=data.length)break;
+      var f=data[o++];
+      o+=2;
+      if(f&2)o+=2;
+      if(f&4)o+=2;
+      if(f&8)o+=2;
+      if(f&16){var t=r16(data,o);o+=2;if(t>0)R.triggers.push({x:x,y:y,t:t})}
+      if(f&1)R.blocked++;
+    }
+  }
+  return R;
+}
+
+function parseInf(data){
+  var R={npcs:[],objs:[],exits:[],format:'?'};
+  var sz=data.length;
+
+  // Detectar texto
+  var txt=0;
+  var checkLen=Math.min(200,sz);
+  for(var i=0;i<checkLen;i++){
+    if((data[i]>=32&&data[i]<=126)||data[i]==10||data[i]==13)txt++;
+  }
+  if(txt>checkLen*0.7){
+    parseInfINI(data,R);
+    return R;
+  }
+
+  // Binario: probar formatos fijos
+  var fmts=[[12,'12B'],[10,'10B'],[8,'8B'],[6,'6B'],[4,'4B']];
+  for(var fi=0;fi<fmts.length;fi++){
+    var bpt=fmts[fi][0],nm=fmts[fi][1];
+    var hdrs=[0,2,4,8];
+    for(var hi=0;hi<hdrs.length;hi++){
+      var hdr=hdrs[hi];
+      if(Math.abs(sz-hdr-bpt*10000)>50)continue;
+      R.format='BIN '+nm+' hdr='+hdr;
+      var o=hdr;
+      for(var y=1;y<=100;y++){
+        for(var x=1;x<=100;x++){
+          if(o+bpt>sz)break;
+          var v=[];for(var vi=0;vi<bpt;vi+=2)v.push(r16(data,o+vi));o+=bpt;
+          if(v[0]>0)R.npcs.push({x:x,y:y,n:v[0]});
+          if(v[1]>0)R.objs.push({x:x,y:y,i:v[1],a:v[2]>0?v[2]:1});
+          if(v[3]>0)R.exits.push({x:x,y:y,m:v[3],ex:v[4]||0,ey:v[5]||0});
+        }
+      }
+      return R;
+    }
+  }
+
+  // Formato desconocido: volcar hex para diagnostico
+  R.format='DESCONOCIDO '+sz+'B';
+  R.size=sz;
+
+  // Primer byte no-cero
+  var firstNZ=0;
+  for(var i=0;i<sz;i++){if(data[i]!==0){firstNZ=i;break}}
+  R.first_data_at=firstNZ;
+
+  // Hex: inicio (512 bytes)
+  var h=[];for(var i=0;i<Math.min(512,sz);i++)h.push(('0'+data[i].toString(16)).slice(-2));
+  R.hex_start=h.join(' ');
+
+  // Hex: desde primer dato (256 bytes)
+  h=[];for(var i=firstNZ;i<Math.min(firstNZ+256,sz);i++)h.push(('0'+data[i].toString(16)).slice(-2));
+  R.hex_at_data=h.join(' ');
+
+  // Hex: final (256 bytes)
+  h=[];var start=Math.max(0,sz-256);for(var i=start;i<sz;i++)h.push(('0'+data[i].toString(16)).slice(-2));
+  R.hex_end=h.join(' ');
+
+  return R;
+}
+
+function parseInfINI(data,R){
+  R.format='INI';
+  var t=new TextDecoder('latin1').decode(data);
+  var lines=t.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  var sec=null,sd={};
+  function flush(){
+    if(!sec)return;
+    var npc=parseInt(sd.NPC||sd.NPCINDEX||'0')||0;
+    var oi=parseInt(sd.OBJ||sd.OBJINDEX||sd.OBJINFO||'0')||0;
+    var oa=parseInt(sd.OBJAMOUNT||sd.AMOUNT||sd.CANTIDAD||'1')||1;
+    var em=0,ex=0,ey=0;
+    var te=sd.TILEEXIT||sd.EXIT||'';
+    if(te){var p=te.replace(/,/g,'-').split('-');if(p.length>=3){em=+p[0];ex=+p[1];ey=+p[2]}}
+    em=em||parseInt(sd.EXITMAP||sd.MAPATRANSPORTE||'0')||0;
+    ex=ex||parseInt(sd.EXITX||'0')||0;
+    ey=ey||parseInt(sd.EXITY||'0')||0;
+    var px=0,py=0;var m=sec.match(/(\d+)\s*[,\-]\s*(\d+)/);if(m){px=+m[1];py=+m[2]}
+    if(npc>0)R.npcs.push({x:px,y:py,n:npc});
+    if(oi>0)R.objs.push({x:px,y:py,i:oi,a:oa});
+    if(em>0)R.exits.push({x:px,y:py,m:em,ex:ex,ey:ey});
+  }
+  for(var li=0;li<lines.length;li++){
+    var l=lines[li].trim();
+    if(!l||l[0]==';'||l[0]=="'")continue;
+    if(l[0]=='['&&l.indexOf(']')>0){flush();sec=l.substring(1,l.indexOf(']')).trim();sd={};continue}
+    var eq=l.indexOf('=');if(eq>0&&sec)sd[l.substring(0,eq).trim().toUpperCase()]=l.substring(eq+1).trim();
+  }
+  flush();
+}
+
+function process(){
+  var result={};
+  var tNpc=0,tObj=0,tEx=0,tTrig=0;
+  allFiles.forEach(function(info,name){
+    var num=name.replace(/\.[^.]+$/,'');
+    if(!result[num])result[num]={};
+    if(info.type==='map'){
+      var r=parseMap(info.data);
+      result[num].map={triggers:r.triggers.length,blocked:r.blocked};
+      tTrig+=r.triggers.length;
+    }
+    if(info.type==='inf'||info.type===name.toLowerCase()){
+      var r=parseInf(info.data);
+      result[num].inf=r;
+      tNpc+=r.npcs.length;
+      tObj+=r.objs.length;
+      tEx+=r.exits.length;
+    }
+    if(info.type==='dat'){result[num].dat='loaded'}
+  });
+  document.getElementById('stats').style.display='flex';
+  document.getElementById('btns').style.display='flex';
+  out.style.display='block';
+  document.getElementById('sFiles').textContent=allFiles.size;
+  document.getElementById('sNpcs').textContent=tNpc;
+  document.getElementById('sObjs').textContent=tObj;
+  document.getElementById('sExits').textContent=tEx;
+  document.getElementById('sTrig').textContent=tTrig;
+  out.value=JSON.stringify(result,null,1);
+}
+
+function downloadJSON(){
+  var blob=new Blob([out.value],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');a.href=url;a.download='mapas_extraidos.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+  msg('Descargado: mapas_extraidos.json');
+}
+
+function copyAll(){
+  out.select();document.execCommand('copy');
+  msg('Copiado al portapapeles!');
+}
+
+function msg(t){var m=document.getElementById('msg');m.textContent=t;m.style.display='block';setTimeout(function(){m.style.display='none'},2500)}
+
+function clearAll(){
+  allFiles.clear();out.value='';out.style.display='none';
+  document.getElementById('stats').style.display='none';
+  document.getElementById('btns').style.display='none';
+}
+</script>
+</body>
+</html>
