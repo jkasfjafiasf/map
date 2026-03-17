@@ -133,7 +133,13 @@ if(oi>0)R.objs.push({x,y,i:oi,a:oa>0?oa:1});
 if(em>0)R.exits.push({x,y,m:em,ex:exx,ey:eyy})}
 return}}
 R.format='DESCONOCIDO '+sz+'B';
-R.hex=Array.from(data.slice(0,128)).map(b=>b.toString(16).padStart(2,'0')).join(' ')}
+R.hex_start=Array.from(data.slice(0,512)).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+R.hex_end=Array.from(data.slice(Math.max(0,sz-256))).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+R.size=sz;
+// Buscar primer byte no-cero
+let firstNonZero=0;for(let i=0;i<sz;i++){if(data[i]!==0){firstNonZero=i;break}}
+R.first_data_at=firstNonZero;
+R.hex_at_data=Array.from(data.slice(firstNonZero,firstNonZero+256)).map(b=>b.toString(16).padStart(2,'0')).join(' ')
 
 function process(){
 const result={};let tNpc=0,tObj=0,tEx=0,tTrig=0;
