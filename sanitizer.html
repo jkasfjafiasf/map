@@ -175,7 +175,8 @@
 
         <div class="actions">
             <button class="btn btn-primary" id="btnInspect" disabled>Inspeccionar Archivos</button>
-            <button class="btn btn-secondary" id="btnCopyJSON" style="display:none">Copiar JSON Limpio</button>
+            <button class="btn btn-secondary" id="btnCopyJSON" style="display:none">Copiar JSON</button>
+            <button class="btn btn-primary" id="btnDownloadJSON" style="display:none">Descargar JSON</button>
             <button class="btn btn-secondary" id="btnExpandAll" style="display:none">Expandir Todo</button>
             <button class="btn btn-secondary" id="btnCollapseAll" style="display:none">Colapsar Todo</button>
             <span class="copy-status" id="copyStatus">Copiado!</span>
@@ -249,6 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btnInspect').addEventListener('click', inspect);
     document.getElementById('btnCopyJSON').addEventListener('click', copyJSON);
+    document.getElementById('btnDownloadJSON').addEventListener('click', downloadJSON);
     document.getElementById('btnExpandAll').addEventListener('click', () => toggleAll(true));
     document.getElementById('btnCollapseAll').addEventListener('click', () => toggleAll(false));
 });
@@ -467,6 +469,7 @@ async function inspect() {
     progC.style.display = 'none';
     document.getElementById('results').style.display = 'block';
     document.getElementById('btnCopyJSON').style.display = '';
+    document.getElementById('btnDownloadJSON').style.display = '';
     document.getElementById('btnExpandAll').style.display = '';
     document.getElementById('btnCollapseAll').style.display = '';
 }
@@ -628,13 +631,4 @@ function buildJSON(nums) {
 }
 
 function copyJSON() {
-    const ta = document.getElementById('jsonOutput');
-    navigator.clipboard.writeText(ta.value).then(() => {
-        const s = document.getElementById('copyStatus');
-        s.classList.add('show');
-        setTimeout(() => s.classList.remove('show'), 2000);
-    });
-}
-</script>
-</body>
-</html>
+    const ta = document.getElementById(
